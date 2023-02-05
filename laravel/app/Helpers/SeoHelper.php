@@ -1,0 +1,396 @@
+<?php
+
+namespace App\Helpers;
+
+use App\Interceptions\ReadyQueriesDisplayPagesInterception;
+use App\Models\Seo\ReadyQueriesDisplayPage;
+use App\Models\Seo\ReadyQueriesDivision;
+
+use App\Helpers\SubDomainHelper;
+use App\Helpers\ReviewsHelper;
+use App\Helpers\ProductsHelper;
+
+class SeoHelper
+{
+
+    static $PROTOCOL = "https://";
+    static $MAIN_DOMAIN = "bankiroff.ru";
+
+
+    public static function getCNC($str, $id)
+    {
+        if (!$str) return '';
+        $result = '';
+        $str = mb_strtolower($str);
+        $transliteration = [' ' => '-', '_' => '', '`' => '', '~' => '', '!' => '', '@' => '', '#' => '', '$' => '', '%' => '', '^' => '', '&' => '', '*' => '', '(' => '', ')' => '', '-' => '', '=' => '', '+' => '', '[' => '', ']' => '', '\\' => '', '|' => '', '/' => '', '.' => '', ',' => '', '{' => '', '}' => '', '\'' => '', '"' => '', ';' => '', ':' => '', '?' => '', '<' => '', '>' => '', '№' => '', 'а' => 'a', 'б' => 'b', 'в' => 'v', 'г' => 'g', 'д' => 'd', 'е' => 'e', 'ё' => 'e', 'ж' => 'zh', 'з' => 'z', 'и' => 'i', 'й' => 'j', 'к' => 'k', 'л' => 'l', 'м' => 'm', 'н' => 'n', 'о' => 'o', 'п' => 'p', 'р' => 'r', 'с' => 's', 'т' => 't', 'у' => 'u', 'ф' => 'f', 'х' => 'h', 'ц' => 'c', 'ч' => 'ch', 'ш' => 'sh', 'щ' => 'shch', 'ъ' => "", 'ы' => 'y', 'ь' => '', 'э' => 'e', 'ю' => 'yu', 'я' => 'ya', '«' => '', '»' => ''];
+        for ($i = 0; $i < strlen($str); $i++) {
+            $current = mb_substr($str, $i, 1, "UTF-8");
+            if (is_numeric($current)) {
+                $result .= $current;
+            } else if (isset($transliteration[$current])) {
+                $result .= $transliteration[$current];
+            } else {
+                $result .= $current;
+            }
+        }
+        $result = str_replace('–', '-', $result);
+        $result = str_replace('---', '-', $result);
+        $result = str_replace('--', '-', $result);
+        $result = str_replace('—-', '', $result);
+        $result = str_replace(' ', '', $result);
+        return $result . "-" . $id;
+    }
+
+    public static function appendSeoDataToCollection($type, $collection, $collection_before_paginate = null){
+        /* Check if collection is paginated data */
+        if(!$collection instanceof \Illuminate\Pagination\LengthAwarePaginator){
+            return $collection;
+        }
+        $first_row = $collection->items()[0];
+        $entries_count = $collection->total();
+        $attributes = $first_row->getAttributes();
+        $percent_min = array_key_exists('percent_min', $attributes) && $collection_before_paginate? $collection_before_paginate->where('percent_min', '>', 0)->min('percent_min') : null;
+        $percent_max = array_key_exists('percent_max', $attributes) && $collection_before_paginate? $collection_before_paginate->max('percent_max'):null;
+        $monthly_payment_min = $percent_min?ProductsHelper::creditPaymentInMonths(null, 'years', null, $percent_min):null;
+        $monthly_payment_max = $percent_max?ProductsHelper::creditPaymentInMonths(null, 'years', null, $percent_max):null;
+        $month_names = array('01'=>'января','02'=>'февраля','03'=>'марта','04'=>'апреля','05'=>'мая','06'=>'июня','07'=>'июля','08'=>'августа','09'=>'сентября','10'=>'октября','11'=>'ноября','12'=>'декабря');
+        $subdomain = isset(getallheaders()['Subdomain'])?getallheaders()['Subdomain']:'msk';
+
+		/* Common object entries */
+        $seo_data = (object) [
+            "date" => Helper::getCurrentDate('d.m.Y'),
+            "entries_count" => $entries_count,
+            /* Variables in this page */
+            "monthly_payment_min_in_page" => array_key_exists('monthly_payment', $attributes)?$collection->min('monthly_payment'):"NOT_AVAILABLE",
+            "monthly_payment_max_in_page" => array_key_exists('monthly_payment', $attributes)?$collection->max('monthly_payment'):"NOT_AVAILABLE",
+            "years_min_in_page" => array_key_exists('years_min', $attributes)?$collection->min('years_min'):"NOT_AVAILABLE",
+            "years_max_in_page" => array_key_exists('years_max', $attributes)?$collection->max('years_max'):"NOT_AVAILABLE",
+            "sum_min_in_page" => array_key_exists('sum_min', $attributes)?$collection->min('sum_min'):"NOT_AVAILABLE",
+            "sum_max_in_page" => array_key_exists('sum_max', $attributes)?$collection->max('sum_max'):"NOT_AVAILABLE",
+            "percent_min_in_page" => array_key_exists('percent_min', $attributes)?$collection->where('percent_min', '>', 0)->min('percent_min'):"NOT_AVAILABLE",
+            "percent_max_in_page" => array_key_exists('percent_max', $attributes)?$collection->max('percent_max'):"NOT_AVAILABLE",
+            /* Variables in all pages */
+            "monthly_payment_min" => $monthly_payment_min?$monthly_payment_min:"NOT_AVAILABLE",
+            "monthly_payment_max" => $monthly_payment_max?$monthly_payment_max:"NOT_AVAILABLE",
+            "years_min" => array_key_exists('years_min', $attributes)?$collection_before_paginate->min('years_min'):"NOT_AVAILABLE",
+            "years_max" => array_key_exists('years_max', $attributes)?$collection_before_paginate->max('years_max'):"NOT_AVAILABLE",
+            "sum_min" => array_key_exists('sum_min', $attributes)?$collection_before_paginate->min('sum_min'):"NOT_AVAILABLE",
+            "sum_max" => array_key_exists('sum_max', $attributes)?$collection_before_paginate->max('sum_max'):"NOT_AVAILABLE",
+            "percent_min" => $percent_min?$percent_min:"NOT_AVAILABLE",
+            "percent_max" => $percent_max?$percent_max:"NOT_AVAILABLE",
+			/* New variables A65 */
+            "date_text" => Helper::getCurrentDate('d').' '.$month_names[Helper::getCurrentDate('m')].' '.Helper::getCurrentDate('Y').' г.',
+            "cash_back_min" => array_key_exists('percent_min', $attributes)?$collection->min('cash_back_min'):"NOT_AVAILABLE",
+            "cash_back_max" => array_key_exists('percent_max', $attributes)?$collection->max('cash_back_max'):"NOT_AVAILABLE",
+            "city" => SubDomainHelper::getSubdomainName($subdomain),
+            "city_genitive" => SubDomainHelper::getSubdomainNameGenitive($subdomain),
+            "city_dative" => SubDomainHelper::getSubdomainNameDative($subdomain),
+            "city_prepositional" => SubDomainHelper::getSubdomainNamePrepositional($subdomain)
+        ];
+        switch($type){
+            case "products":
+                $seo_data->creditors_count  = $collection_before_paginate? (clone $collection_before_paginate)->distinct('creditor_id')->count('creditor_id') : $entries_count;break;
+            case "creditors":
+                $seo_data->creditors_count = $entries_count; break;
+        }
+        $seo_collection = collect(['seo_data' => $seo_data]);
+        $total_collection = $seo_collection->merge($collection);
+        return $total_collection;
+    }
+
+	public static function getUniversalVariables() {
+        $month_names = array('01'=>'января','02'=>'февраля','03'=>'марта','04'=>'апреля','05'=>'мая','06'=>'июня','07'=>'июля','08'=>'августа','09'=>'сентября','10'=>'октября','11'=>'ноября','12'=>'декабря');
+        $subdomain = isset(getallheaders()['Subdomain'])?getallheaders()['Subdomain']:'msk';
+        if ($subdomain=='') $subdomain = 'msk';
+        $seo_data = array(
+            "date" => Helper::getCurrentDate('d.m.Y'),
+            "date_text" => Helper::getCurrentDate('d').' '.$month_names[Helper::getCurrentDate('m')].' '.Helper::getCurrentDate('Y').' г.',
+            "city" => SubDomainHelper::getSubdomainName($subdomain),
+            "city_genitive" => SubDomainHelper::getSubdomainNameGenitive($subdomain),
+            "city_dative" => SubDomainHelper::getSubdomainNameDative($subdomain),
+            "city_prepositional" => SubDomainHelper::getSubdomainNamePrepositional($subdomain)
+        );
+        return $seo_data;
+    }
+
+    public static function getFullURL($slug, $data)
+    {
+        $subdomain = '';
+        switch ($slug) {
+            /*
+            We add the subdomain just for news, as far as it is the unique material on the website
+            Which has the logic of subdomains implemented, we should have in mind that
+            If the material (news or article) has 1 region, we check if there is an active subdomain for that region, if it has we believe the material should be available just in that region.
+            And not in another subdomain.
+            If the material does not have regions or if it has more than 1, in this case the subdomain will be null (Global material, not connected to any subdomain)
+            */
+            case 'news':
+                $subdomain_aux = SubDomainHelper::addSubdomainToOne($data);
+                $subdomain = $subdomain_aux && $subdomain_aux->subdomain ? $subdomain_aux->subdomain : null;
+                break;
+            case 'specific_review':
+                $data = ReviewsHelper::addTimestampsPublishedAtObj($data);
+                break;
+            default:
+                $subdomain = '';
+                break;
+        }
+        $subdomain = $subdomain ? $subdomain . '.' : null;
+
+        $url = self::$PROTOCOL . $subdomain . self::$MAIN_DOMAIN . SeoHelper::getCustomUriWithCNC($slug, $data);
+        return $url;
+    }
+    public static function getCustomUriWithCNC($slug, $data)
+    {
+        if (!$data) return '/';
+
+        switch ($slug) {
+            case 'cards_debit':
+            case 'cards_credit':
+            case 'cards':
+                $url = "/products/cards/$data->type/";
+                $titleAux = $data->type == 'credit' ? 'Кредитная карта' : 'Дебетовая карта';
+                $customTitle = "$titleAux «{$data->title}» от {$data->creditor->genitive}";
+                break;
+            case 'credits':
+                $urlAux =
+                    $data->type_slug && !$data->pledge_slug
+                    ? "{$data->type_slug}/"
+                    : "{$data->pledge_slug}/";
+                $url = "/products/credits/$urlAux";
+
+                $customTitle = "Кредит «{$data->title}», {$data->creditor->name}";
+                break;
+            case 'consumers':
+            case 'credits_consumers':
+                $url = "/products/credits/consumers/";
+                $customTitle = "Потребительский кредит «{$data->title}», {$data->creditor->name}";
+                break;
+            case 'microloans':
+            case 'credits_microloans':
+                $url = "/products/credits/microloans/";
+                $customTitle = "Микрозайм «{$data->title}», {$data->creditor->name}";
+                break;
+            case 'deposits':
+                $url = "/products/{$slug}/";
+                $customTitle = "Вклад «{$data->title}», {$data->creditor->name}";
+                break;
+            case 'news':
+                if (
+                    $data->theme_slug == 'advices' ||
+                    $data->theme_slug == 'comparisons' ||
+                    $data->theme_slug == 'analytics'
+                ) {
+                    $urlAux = $data->theme_slug == 'advices' ? "{$data->advice_slug}/" : '';
+                    $url = "/articles/{$data->theme_slug}/{$urlAux}";
+                    $customTitle = "{$data->title}";
+                } else {
+                    $url = "/news/{$data->theme_slug}/";
+                    $customTitle = "$data->title";
+                }
+                break;
+            case 'creditors':
+                $urlAux = $data->name ? $data->type_slug : $data->creditor->type_slug;
+                $url = "/creditors/$urlAux/";
+                $customTitleAux = $data->name ?? $data->creditor->name;
+                $customTitle = "$customTitleAux - сайт, телефоны и адреса";
+                break;
+            case 'reviews_creditor':
+                $url = "/creditors/{$data->type_slug}/";
+                // $customTitle = "Список отзывов {$data->genitive}"
+                $customTitleAux = $data->name ?? $data->creditor->name;
+                $customTitle = "$customTitleAux - сайт, телефоны и адреса";
+                $CNC = SeoHelper::getCNC($customTitle, $data->id);
+                return "{$url}{$CNC}/reviews";
+            case 'reviews_card':
+                $url = "/products/cards/{$data->type}/";
+                // $customTitle = "Список отзывов ${
+                //   $data->type == 'credit' ? 'кредитной ' : 'дебетовой'
+                // } карты «{$data->title}» от {$data->creditor.genitive}"
+                $customTitleAux = $data->type == 'credit' ? 'Кредитная карта' : 'Дебетовая карта';
+                $customTitle = "$customTitleAux «{$data->title}» от {$data->creditor->genitive}";
+                $CNC = SeoHelper::getCNC($customTitle, $data->id);
+                return "{$url}{$CNC}/reviews";
+            case 'reviews_deposit':
+                $url = "/products/deposits/";
+                // $customTitle = "Список отзывов вклада «{$data->title}» от {$data->creditor.genitive}"
+                // return "${url}${getCNC($customTitle, $data->id)}/reviews"
+                $customTitle = "Вклад «{$data->title}», {$data->creditor->name}";
+                $CNC = SeoHelper::getCNC($customTitle, $data->id);
+
+                return "{$url}{$CNC}/reviews";
+            case 'reviews_credit':
+                $urlAux =
+                    $data->type_slug && !$data->pledge_slug
+                    ? "{$data->type_slug}/"
+                    : "{$data->pledge_slug}/";
+                $url = "/products/credits/{$urlAux}";
+                // $customTitle = "Список отзывов кредита «{$data->title}» от {$data->creditor.genitive}"
+                $customTitle = "Кредит «{$data->title}», {$data->creditor->name}";
+                $CNC =  SeoHelper::getCNC($customTitle, $data->id);
+                return "{$url}{$CNC}/reviews";
+
+            case 'reviews_microloans':
+                $url = "/products/credits/microloans/";
+                // $customTitle = "Список отзывов микрозайма «{$data->title}» от {$data->creditor.genitive}"
+                $customTitle = "Микрозайм «{$data->title}», {$data->creditor->name}";
+                $CNC = SeoHelper::getCNC($customTitle, $data->id);
+                return "{$url}{$CNC}/reviews";
+            case 'reviews_consumers':
+                $url = "/products/credits/consumers/";
+                // $customTitle = "Список отзывов потребительского кредита «{$data->title}» от {$data->creditor.genitive}"
+                $customTitle = "Потребительский кредит «{$data->title}», {$data->creditor->name}";
+                $CNC = SeoHelper::getCNC($customTitle, $data->id);
+
+                return "{$url}{$CNC}/reviews";
+
+            case 'specific_review':
+                if ($data->type_slug == 'creditors') {
+                    $url = "/reviews/creditors/{$data->creditor->type_slug}/";
+                    $customTitleAux = $data->author ? $data->author : $data->user->nickname;
+                    $customTitle = "Отзыв {$data->creditor->prepositional} от {$data->publication_date}, {$customTitleAux}";
+                } else if ($data->type_slug == 'deposits') {
+                    $url = "/reviews/products/{$data->type_slug}/";
+                    $customTitleAux = $data->author ? $data->author : $data->user->nickname;
+                    $customTitle = "Отзыв {$data->creditor->prepositional} от {$data->publication_date}, {$customTitleAux}";
+                } else if ($data->type_slug == 'cards') {
+                    if (!$data->card_type) return '';
+                    $url = "/reviews/products/cards/{$data->card_type->type}/";
+                    $customTitleAux = $data->author ? $data->author : $data->user->nickname;
+                    $customTitle = "Отзыв {$data->creditor->prepositional} от {$data->publication_date}, {$customTitleAux}";
+                } else if (
+                    $data->type_slug == 'consumers' ||
+                    $data->type_slug == 'microloans' ||
+                    $data->type_slug == 'refinancing'
+                ) {
+                    $url = "/reviews/products/credits/{$data->type_slug}/";
+                    $customTitleAux = $data->author ? $data->author : $data->user->nickname;
+                    $customTitle = "Отзыв {$data->creditor->prepositional} от {$data->publication_date}, {$customTitleAux}";
+                } else if ($data->type_slug == 'credits') {
+                    $PLEDG_SLUG =
+                        $data->credit_types && $data->credit_types->pledge_slug
+                        ? $data->credit_types->pledge_slug
+                        : null;
+                    $SLUG =
+                        $data->credit_types && $data->credit_types->type_slug
+                        ? $data->credit_types->type_slug
+                        : null;
+                    $urlAux = $SLUG && !$PLEDG_SLUG ? $SLUG : $PLEDG_SLUG;
+                    if (!$SLUG && !$PLEDG_SLUG) {
+                        /* NO PRODUCT / PRODUCT WAS DELETED */
+                        $url = "/reviews/products/credits/noproduct/";
+                    } else {
+                        $url = "/reviews/products/credits/{$urlAux}/";
+                    }
+                    $customTitleAux = $data->author ? $data->author : $data->user->nickname;
+                    $customTitle = "Отзыв {$data->creditor->prepositional} от {$data->publication_date}, {$customTitleAux}";
+                }
+
+                break;
+            case 'creditors_credits_list':
+                $url = "/creditors/{$data->type_slug}/";
+                // $customTitle = "Список кредитов кредитора, {$data->name}"
+                $customTitleAux = $data->name ?? $data->creditor->name;
+                $customTitle = "$customTitleAux - сайт, телефоны и адреса";
+                $CNC = SeoHelper::getCNC($customTitle, $data->id);
+                return "{$url}{$CNC}/credits";
+            case 'creditors_consumers_list':
+                $url = "/creditors/{$data->type_slug}/";
+                $customTitleAux = $data->name ?? $data->creditor->name;
+                $customTitle = "$customTitleAux - сайт, телефоны и адреса";
+                // $customTitle = "Список потребительских кредитов кредитора, {$data->name}"
+                $CNC = SeoHelper::getCNC($customTitle, $data->id);
+                return "{$url}{$CNC}/consumers";
+            case 'creditors_microloans_list':
+                $url = "/creditors/{$data->type_slug}/";
+                $customTitleAux = $data->name ?? $data->creditor->name;
+                $customTitle = "$customTitleAux - сайт, телефоны и адреса";
+                // $customTitle = "Список микрозаймов кредитора, {$data->name}"
+                $CNC = SeoHelper::getCNC($customTitle, $data->id);
+                return "{$url}{$CNC}/microloans";
+            case 'creditors_deposits_list':
+                $customTitleAux = $data->name ?? $data->creditor->name;
+                $customTitle = "$customTitleAux - сайт, телефоны и адреса";
+                $url = "/creditors/{$data->type_slug}/";
+                // $customTitle = "Список вкладов и депозитов кредитора, {$data->name}"
+                $CNC = SeoHelper::getCNC($customTitle, $data->id);
+                return "{$url}{$CNC}/deposits";
+            case 'creditors_cards_list':
+                $url = "/creditors/{$data->type_slug}/";
+                $customTitleAux = $data->name ?? $data->creditor->name;
+                $customTitle = "$customTitleAux - сайт, телефоны и адреса";
+                // $customTitle = "Список карт кредитора, {$data->name}"
+                $CNC = SeoHelper::getCNC($customTitle, $data->id);
+                return "{$url}{$CNC}/cards";
+        }
+        $CNC = SeoHelper::getCNC($customTitle, $data->id);
+
+        return "{$url}{$CNC}";
+    }
+
+    public static function fillProductInterceptions($items, $type = null, $new_product_id = null, $old_product_id = null)
+    {
+        if ($items == "DELETE") SeoHelper::deleteProductInterceptions($type, $old_product_id);
+        $items = json_decode($items, true);
+        if (!$items) return false;
+        if ($items && count($items) > 0) {
+            if ($old_product_id) {
+                SeoHelper::deleteProductInterceptions($type, $old_product_id);
+                $new_product_id = $old_product_id;
+            }
+
+            foreach ($items as $key => $item) {
+                switch ($type) {
+                        /* Ready queries */
+                    case 'ready_queries_display_pages':
+                        $model =  new ReadyQueriesDisplayPagesInterception();
+                        $model->ready_query_id = $new_product_id;
+                        $model->ready_query_display_page_id = $item['value'];
+                        $model->save();
+                        break;
+                }
+            }
+            return $items;
+        }
+    }
+
+    public static function deleteProductInterceptions($type = null, $id = null)
+    {
+
+        switch ($type) {
+                /* Ready queries */
+            case 'ready_queries_display_pages':
+                ReadyQueriesDisplayPagesInterception::where('ready_query_id', $id)->delete();
+                break;
+        }
+    }
+
+    public static function getDisplayPageIdByUrl($url = null)
+    {
+        if (!$url) return null;
+        $url_trim = rtrim($url, "/");
+        $display_page = ReadyQueriesDisplayPage::where('url', $url_trim)->first();
+        return $display_page ? $display_page->id : null;
+    }
+
+    public static function addDivision($items)
+    {
+        if (!count($items)) return $items;
+        foreach ($items as $key => $item) {
+            $item->division;
+        }
+    }
+
+    public static function addDisplayPageMeaningAsKeyValue($items)
+    {
+        if (count($items) > 0) {
+            foreach ($items as $key => &$item) {
+                $meaning_obj = ReadyQueriesDisplayPage::where('id', $item->value)->select('title')->first();
+                $item->title = $meaning_obj ? $meaning_obj->title : 'Не определено';
+                $item->value = strval($item->value);
+            }
+        }
+
+        return $items;
+    }
+}
